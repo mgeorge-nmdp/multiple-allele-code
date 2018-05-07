@@ -1,53 +1,106 @@
-#%RAML 0.8
+#%RAML 1.0
 title: Multiple Allele Code Service
-version: 0.1
-baseUri: http://localhost:8080/api/
-documentation: 
+version: 1.0
+baseUri: http://hml.nmdp.org/mac/api/
+documentation:
   - title: Multiple Allele Code API
     content: Service for finding, creating, and expanding multiple allele codes (MAC)
-      using the IMGT/HLA nomenclature.
-          Copyright (c) 2014-2015 National Marrow Donor Program (NMDP)
-      
+      using the IMGT/HLA nomenclature
+
+types:
+  AlleleResponseItem:
+    properties:
+      oldName:
+        description: If a transformation is done, the original value
+        type: string
+        required: false
+      oldNameStatus:
+        type: string
+        required: true
+      expanded:
+        description: The full allele name used for display.
+        type: string
+        required: true
+      transformationReason:
+        description: |
+          The code for the transformation performed.
+            * DISPLAYEXP - Added, updated, or removed an expression character
+            * DELRENAME - Transformed a deleted or renamed allele
+        type: string
+        required: false
+
+  TransformedMacd:
+    description: A transformed multiple allele code designation like "HLA-A*01:AB"
+    properties:
+      macd:
+        type: string
+        required: true
+      transformations:
+        type: AlleleResponseItem[]
+
 /codes:
-  description: Retrieve the collections of multiple allele code definitions.  
+  description: Retrieve the collections of multiple allele code definitions.
     One per line with the fields {allele_specific_indicator, code, definition} separated by tabs.
   get:
     queryParameters:
       after:
         description: |
-          Only return code definitions with a code greater.  
-          If "AAA" is specified,  will not include itself or shorter codes like "ZZ". 
-      before: 
-        description: Only return code definitions with a code smaller.  
+          Only return code definitions with a code greater.
+          If "AAA" is specified,  will not include itself or shorter codes like "ZZ".
+      before:
+        description: Only return code definitions with a code smaller.
     responses:
-      200: 
+      200:
         body:
           text/plain:
             example: !include ./ex-allele-codes.txt
+      400:
+        body:
+          text/plain:
+      500:
+        body:
+          text/plain:
 
   /{code}:
     uriParameters:
       code:
         description: The specific multiple allele code
     get:
-      description: Retrieve the multiple allele code definition for the specified code  
+      description: Retrieve the multiple allele code definition for the specified code
       responses:
-        200: 
+        200:
+          body:
+            text/plain:
+        400:
+          body:
+            text/plain:
+        500:
           body:
             text/plain:
 /encode:
   description: Encodes an allele list
   post:
     queryParameters:
+      trialRun:
+        description: Simulate an encode without actually persisting.
+        type: boolean
       imgtHlaRelease:
         description: |
           Optionally specify the IMGT/HLA Release like "3.19.0" (default is the latest release)
         example: "3.19.0"
+      email:
+        description: |
+          Specify an email identifying the requester.  
+          Without this no new allele code will be created
     body:
       text/plain:
+        type: string
         example: "HLA-A*01:01/HLA-A*01:02"
     responses:
       200:
+        headers:
+          x-warning:
+            description: information that should be logged or shown to user
         body:
           text/plain:
             example: "HLA-A*01:AB"
@@ -55,6 +108,9 @@ documentation:
         body:
           text/plain:
             example: "Invalid allele: HLA-B*01:01"
+      500:
+        body:
+          text/plain:
 
 /decode:
   description: Decodes an allele code designation
@@ -80,4 +136,101 @@ documentation:
         body:
           text/plain:
             example: "Invalid allele code: ONE"
+      500:
+        body:
+          text/plain:
 
+/imgtHlaReleases:
+  description:
+    IMGT/HLA Releases available for use.
+    One release per line.  Each line has the version, a blank, and then the year and month it was released.
+    It will be ordered from newest to oldest and the first one will be the default for other operations.
+  get:
+    responses:
+      200:
+        body:
+          text/plain:
+            example: "3.20.0 2015-04"
+      400:
+        body:
+          text/plain:
+      500:
+        body:
+          text/plain:
+
+/expand:
+  description: Decodes an allele code designation and returns a sorted list of alleles including their transformation reason
+  get:
+    queryParameters:
+      imgtHlaRelease:
+        description: |
+          Optionally specify the IMGT/HLA Release like "3.19.0" (default is the latest release)
+        example: "3.19.0"
+      typing:
+        description: An allele code designation in the format locus*firstField:alleleCode
+        example: "HLA-A*01:AB"
+    responses:
+      200:
+        body:
+          application/json:
+            type:  AlleleResponseItem[]
+            example: [{
+                         "transformationReason": "null",
+                         "oldName": "null",
+                         "oldNameStatus": "valid",
+                         "expanded": "A*01:03:01:02"
+                        },
+                       {
+                         "oldName": "A*01:34N",
+                         "oldNameStatus": "invalid",
+                         "expanded": "A*01:01:38L",
+                         "transformationReason": "DELRENAME"
+                       }
+                     ]
+      400:
+        body:
+          text/plain:
+            example: "Invalid allele code: ONE"
+      500:
+        body:
+          text/plain:
+
+/transform:
+  description: Transforms a multiple allele code designation (MACD) and return list of transformation reasons
+  get:
+    queryParameters:
+      imgtHlaRelease:
+        description: |
+          Optionally specify the IMGT/HLA Release like "3.19.0" (default is the latest release)
+        example: "3.19.0"
+      typing:
+        description: An allele code designation in the format locus*firstField:alleleCode
+        example: "HLA-A*01:AB"
+    responses:
+      200:
+        body:
+          application/json:
+            type:  TransformedMacd
+            example: {
+              "macd":"HLA-A*01:ABC",
+              "transformations":[{
+                                     "transformationReason": "DISPLAYEXP",
+                                     "oldName": "A*01:04",
+                                     "oldNameStatus": "valid",
+                                     "expanded": "A*01:04N"
+                                   },
+                                   {
+                                      "transformationReason": "DISPLAYEXP",
+                                      "oldName": "A*01:11",
+                                      "oldNameStatus": "valid",
+                                      "expanded": "A*01:11N"
+                                    }
+                                  ]
+            }
+      400:
+        body:
+          text/plain:
+            example: "Invalid allele code: ONE"
+      500:
+        body:
+          text/plain:
